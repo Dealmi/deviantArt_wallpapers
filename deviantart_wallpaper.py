@@ -15,7 +15,7 @@ else:
 # getting data from Deviantart
 
 #create an API object with your client credentials (look up instructions at https://www.deviantart.com/developers/)
-da = deviantart.Api("21379", "3127eadaafabd145c94e636c6d3517fd")
+da = deviantart.Api("xxxxx", "yyyyyyyyyyyyyyyyyyyyyyyyyy")
 
 #fetch daily deviations
 # dailydeviations = da.browse_dailydeviations()
