@@ -1,3 +1,4 @@
+# This is windows only script
 import ctypes 
 import deviantart
 import random
