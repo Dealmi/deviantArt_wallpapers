@@ -25,7 +25,7 @@ dailydeviations = da.browse(endpoint='tags', category_path='', seed='', q='', ti
 
 # Choosing one random image from the collection
 max=len(dailydeviations["results"])
-result=random.randrange (0,max+1)
+result=random.randrange (0,max)
 image_url=dailydeviations["results"][result].content["src"]
 
 #Finding out our TMP path
