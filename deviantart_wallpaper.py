@@ -59,10 +59,19 @@ class DeviantArtWallpaperSetter:
         self.client_secret = None
         self.mature_content = False
         self.search_tags = ["anime", "manga", "yuri"]  # Default tags
+        self.show_terminal = True  # Default to showing terminal
         self.access_token = None
         self.refresh_token = None
         self.token_expires_at = None
         self.session = requests.Session()
+
+    def log(self, message: str, error: bool = False):
+        """Print message only if show_terminal is True."""
+        if self.show_terminal:
+            if error:
+                print(message, file=sys.stderr)
+            else:
+                print(message)
 
     # ---------- Configuration ---------- #
     def load_config(self) -> bool:
@@ -74,16 +83,17 @@ class DeviantArtWallpaperSetter:
             self.client_secret = cfg.get("client_secret")
             self.mature_content = bool(cfg.get("mature_content", False))
             self.search_tags = cfg.get("search_tags", ["anime", "manga", "yuri"])  # Read tags from config
+            self.show_terminal = bool(cfg.get("show_terminal", True))  # Read terminal setting from config
         except FileNotFoundError:
-            print(f"[ERROR] Configuration file {CONFIG_FILE} not found.", file=sys.stderr)
+            self.log(f"[ERROR] Configuration file {CONFIG_FILE} not found.", error=True)
             return False
         except json.JSONDecodeError as exc:
-            print(f"[ERROR] Invalid JSON: {exc}", file=sys.stderr)
+            self.log(f"[ERROR] Invalid JSON: {exc}", error=True)
             return False
 
         missing = [k for k in ("client_id", "client_secret") if not getattr(self, k)]
         if missing:
-            print(f"[ERROR] Missing fields in config: {', '.join(missing)}", file=sys.stderr)
+            self.log(f"[ERROR] Missing fields in config: {', '.join(missing)}", error=True)
             return False
         return True
 
@@ -102,10 +112,10 @@ class DeviantArtWallpaperSetter:
             if self.access_token and self.token_expires_at:
                 import time
                 if time.time() < self.token_expires_at - 300:  # 5 minute buffer
-                    print("[INFO] Using existing valid token")
+                    self.log("[INFO] Using existing valid token")
                     return True
                 elif self.refresh_token:
-                    print("[INFO] Token expired, attempting refresh...")
+                    self.log("[INFO] Token expired, attempting refresh...")
                     return self.refresh_access_token()
                     
         except (FileNotFoundError, json.JSONDecodeError, KeyError):
@@ -126,7 +136,7 @@ class DeviantArtWallpaperSetter:
             with open(TOKEN_FILE, "w", encoding="utf-8") as f:
                 json.dump(token_data, f, indent=2)
         except Exception as e:
-            print(f"[WARN] Failed to save token: {e}", file=sys.stderr)
+            self.log(f"[WARN] Failed to save token: {e}", error=True)
 
     def refresh_access_token(self) -> bool:
         """Refresh the access token using refresh token."""
@@ -147,13 +157,13 @@ class DeviantArtWallpaperSetter:
                 self.access_token = token_response.get("access_token")
                 self.refresh_token = token_response.get("refresh_token", self.refresh_token)
                 self.save_token(token_response)
-                print("[INFO] Token refreshed successfully")
+                self.log("[INFO] Token refreshed successfully")
                 return bool(self.access_token)
             else:
-                print(f"[WARN] Token refresh failed: {resp.text}", file=sys.stderr)
+                self.log(f"[WARN] Token refresh failed: {resp.text}", error=True)
                 return False
         except Exception as e:
-            print(f"[WARN] Token refresh error: {e}", file=sys.stderr)
+            self.log(f"[WARN] Token refresh error: {e}", error=True)
             return False
 
     def authenticate(self) -> bool:
@@ -178,7 +188,7 @@ class DeviantArtWallpaperSetter:
         threading.Thread(target=server.serve_forever, daemon=True).start()
 
         # Open browser for user login once (token persists until script ends)
-        print("[INFO] Opening browser for DeviantArt authorization…")
+        self.log("[INFO] Opening browser for DeviantArt authorization…")
         webbrowser.open(auth_url_full, new=1)
 
         # Wait until OAuthHandler sets the code
@@ -196,7 +206,7 @@ class DeviantArtWallpaperSetter:
         }
         resp = self.session.post(TOKEN_URL, data=data, timeout=30)
         if resp.status_code != 200:
-            print(f"[ERROR] Token request failed: {resp.text}", file=sys.stderr)
+            self.log(f"[ERROR] Token request failed: {resp.text}", error=True)
             return False
             
         token_response = resp.json()
@@ -223,16 +233,16 @@ class DeviantArtWallpaperSetter:
             
             # Handle token expiration during API call
             if resp.status_code == 401:
-                print("[INFO] Token expired during API call, attempting refresh...")
+                self.log("[INFO] Token expired during API call, attempting refresh...")
                 if self.refresh_access_token():
                     headers = {"Authorization": f"Bearer {self.access_token}"}
                     resp = self.session.get(BROWSE_TAGS_URL, params=params, headers=headers, timeout=30)
                 else:
-                    print("[ERROR] Failed to refresh token, re-authentication required", file=sys.stderr)
+                    self.log("[ERROR] Failed to refresh token, re-authentication required", error=True)
                     return []
                     
             if resp.status_code != 200:
-                print(f"[WARN] /browse/tags failed for tag '{tag}': {resp.text}", file=sys.stderr)
+                self.log(f"[WARN] /browse/tags failed for tag '{tag}': {resp.text}", error=True)
                 continue
             for d in resp.json().get("results", []):
                 # Skip premium/restricted content
@@ -258,7 +268,7 @@ class DeviantArtWallpaperSetter:
     def download_and_set_wallpaper(self, deviation: dict) -> bool:
         url = deviation.get("content", {}).get("src")
         if not url:
-            print("[ERROR] No image URL found", file=sys.stderr)
+            self.log("[ERROR] No image URL found", error=True)
             return False
             
         # Validate file extension
@@ -270,14 +280,14 @@ class DeviantArtWallpaperSetter:
         os.close(tmp_fd)
 
         try:
-            print(f"[INFO] Downloading: {deviation.get('title', 'Unknown')}")
+            self.log(f"[INFO] Downloading: {deviation.get('title', 'Unknown')}")
             with self.session.get(url, stream=True, timeout=60) as r:
                 r.raise_for_status()
                 
                 # Check content type to ensure it's an image
                 content_type = r.headers.get('content-type', '').lower()
                 if not content_type.startswith('image/'):
-                    print(f"[ERROR] Invalid content type: {content_type}", file=sys.stderr)
+                    self.log(f"[ERROR] Invalid content type: {content_type}", error=True)
                     return False
                 
                 # Download the image
@@ -287,17 +297,17 @@ class DeviantArtWallpaperSetter:
                         
                 # Verify file size (must be > 1KB to be a valid image)
                 if os.path.getsize(tmp_path) < 1024:
-                    print("[ERROR] Downloaded file is too small (likely not an image)", file=sys.stderr)
+                    self.log("[ERROR] Downloaded file is too small (likely not an image)", error=True)
                     os.unlink(tmp_path)
                     return False
                     
         except Exception as exc:
-            print(f"[ERROR] Download failed: {exc}", file=sys.stderr)
+            self.log(f"[ERROR] Download failed: {exc}", error=True)
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
             return False
 
-        print(f"[INFO] Setting wallpaper: {deviation.get('title')}")
+        self.log(f"[INFO] Setting wallpaper: {deviation.get('title')}")
         SPI_SETDESKWALLPAPER = 0x14
         SPIF_UPDATEINIFILE = 0x01
         SPIF_SENDWININICHANGE = 0x02
@@ -307,53 +317,60 @@ class DeviantArtWallpaperSetter:
                 SPI_SETDESKWALLPAPER, 0, tmp_path, SPIF_UPDATEINIFILE | SPIF_SENDWININICHANGE
             )
             if not res:
-                print("[ERROR] Failed to set wallpaper", file=sys.stderr)
+                self.log("[ERROR] Failed to set wallpaper", error=True)
                 return False
                 
             # Verify the wallpaper was actually set by checking if file still exists
             if not os.path.exists(tmp_path):
-                print("[ERROR] Wallpaper file was deleted during setting", file=sys.stderr)
+                self.log("[ERROR] Wallpaper file was deleted during setting", error=True)
                 return False
                 
-            print(f"[SUCCESS] Wallpaper set successfully: {tmp_path}")
+            self.log(f"[SUCCESS] Wallpaper set successfully: {tmp_path}")
             return True
             
         except Exception as exc:
-            print(f"[ERROR] Wallpaper setting failed: {exc}", file=sys.stderr)
+            self.log(f"[ERROR] Wallpaper setting failed: {exc}", error=True)
             return False
 
 # ---------- Main ---------- #
 def main() -> bool:
-    print("=== DeviantArt 4 K Anime Wallpaper Setter ===")
     app = DeviantArtWallpaperSetter()
+    
+    # Load config first to determine if we should show terminal
     if not app.load_config():
+        print("[ERROR] Failed to load configuration", file=sys.stderr)
         return False
+    
+    # Show header only if terminal is enabled
+    if app.show_terminal:
+        print("=== DeviantArt 4K Anime Wallpaper Setter ===")
+    
     if not app.authenticate():
         return False
 
     images = app.collect_image_links()
     if not images:
-        print("[ERROR] No suitable images found")
+        app.log("[ERROR] No suitable images found", error=True)
         return False
 
     # Try up to 3 different images if one fails
     max_attempts = min(3, len(images))
     for attempt in range(max_attempts):
         if attempt > 0:
-            print(f"[INFO] Retry attempt {attempt + 1}/{max_attempts}")
+            app.log(f"[INFO] Retry attempt {attempt + 1}/{max_attempts}")
             
         choice = random.choice(images)
         if app.download_and_set_wallpaper(choice):
-            print("[SUCCESS] Wallpaper updated")
+            app.log("[SUCCESS] Wallpaper updated")
             return True
         else:
             # Remove failed image from list to avoid retrying it
             images.remove(choice)
             if not images:
-                print("[ERROR] No more images to try")
+                app.log("[ERROR] No more images to try", error=True)
                 return False
 
-    print("[ERROR] Failed to set wallpaper after all attempts")
+    app.log("[ERROR] Failed to set wallpaper after all attempts", error=True)
     return False
 
 if __name__ == "__main__":
