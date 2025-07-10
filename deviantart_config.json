@@ -2,5 +2,6 @@
   "client_id": "21379",
   "client_secret": "3127eadaafabd145c94e636c6d3517fd",
   "mature_content": true,
-  "search_tags": ["anime", "yuri", "kawaii", "otaku", "waifu", "monstermusume" ]
+  "search_tags": ["anime", "yuri", "kawaii", "otaku", "waifu", "monstermusume"],
+  "show_terminal": false
 }
